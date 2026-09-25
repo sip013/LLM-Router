@@ -1,3 +1,6 @@
+# Local routing records
+data/traces.jsonl
+
 # Secrets
 .env
 .env.*
