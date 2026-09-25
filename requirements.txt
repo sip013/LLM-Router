@@ -3,3 +3,6 @@ langchain
 langgraph
 langchain_community
 langchain-groq
+langchain-google-genai
+google-genai
+numpy
