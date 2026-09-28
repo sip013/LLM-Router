@@ -1,5 +1,6 @@
 # Local routing records
 data/traces.jsonl
+data/uploads/
 
 # Secrets
 .env

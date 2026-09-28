@@ -16,6 +16,7 @@ class ModelRecord:
     # Used only to estimate cost for ranking. Not sent to the provider.
     output_token_cap: int = 1024
     max_output_tokens: int = 65536
+    display_name: str = ""
 
 
 @dataclass(frozen=True)
@@ -44,6 +45,7 @@ CATALOG: tuple[ModelRecord, ...] = (
         expected_latency_ms=400,
         quality={"chat": 0.86, "code": 0.42, "extract": 0.70, "plan": 0.40},
         criteria="Greetings, short questions, definitions, basic arithmetic, and rewrites.",
+        display_name="GPT-OSS 20B",
     ),
     ModelRecord(
         model_id="openai/gpt-oss-120b",
@@ -56,6 +58,7 @@ CATALOG: tuple[ModelRecord, ...] = (
         expected_latency_ms=900,
         quality={"chat": 0.80, "code": 0.90, "extract": 0.84, "plan": 0.88},
         criteria="Coding, debugging, explaining an algorithm and writing it, proofs, and multi-step planning.",
+        display_name="GPT-OSS 120B",
     ),
     ModelRecord(
         model_id="qwen/qwen3.8-27b",
@@ -68,6 +71,7 @@ CATALOG: tuple[ModelRecord, ...] = (
         expected_latency_ms=1000,
         quality={"chat": 0.55, "code": 0.60, "extract": 0.58, "plan": 0.62, "image": 0.90},
         criteria="Image understanding, OCR, charts, and questions about an attached picture.",
+        display_name="Qwen 3.8 27B",
     ),
 )
 

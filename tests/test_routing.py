@@ -146,5 +146,57 @@ class QualityAndTraceTests(unittest.TestCase):
                 )
 
 
+class WebSafetyTests(unittest.TestCase):
+    def test_markdown_cannot_inject_a_script(self):
+        from llm_router.render import render_markdown
+        html = render_markdown("Hello <script>alert(1)</script>\n[ok](javascript:alert(1))")
+        self.assertNotIn("<script>", html)
+        self.assertNotIn('href="javascript:', html)
+
+    def test_image_sniff_rejects_a_mismatch(self):
+        from llm_router.web import sniff_image
+        self.assertEqual(sniff_image(b"\x89PNG\r\n\x1a\nrest")[0], "image/png")
+        self.assertIsNone(sniff_image(b"not an image"))
+
+    def test_only_localhost_is_allowed(self):
+        from llm_router.web import host_allowed
+        self.assertTrue(host_allowed("127.0.0.1:8765"))
+        self.assertTrue(host_allowed("192.168.1.20:8765"))
+        self.assertTrue(host_allowed("10.0.0.4:8765"))
+        self.assertFalse(host_allowed("evil.example:8765"))
+        self.assertFalse(host_allowed("8.8.8.8:8765"))
+
+    def test_code_block_language_is_escaped(self):
+        from llm_router.render import render_markdown
+        html = render_markdown("```py\nx = '<b>'\n```\n1. one\n2. two")
+        self.assertIn("<figcaption>py</figcaption>", html)
+        self.assertIn("&lt;b&gt;", html)
+        self.assertIn("<ol><li>one</li><li>two</li></ol>", html)
+
+    def test_decision_view_hides_internal_errors(self):
+        from llm_router.web import _decision_view
+        view = _decision_view({
+            "text": "hi",
+            "model_id": "openai/gpt-oss-20b",
+            "decision": {
+                "task_type": "chat",
+                "analysis_source": "jev",
+                "jev": {"route_confidence": 0.9},
+                "ranked": [{"model_id": "openai/gpt-oss-20b", "score": 0.8}],
+                "rejected": [{"model_id": "qwen/qwen3.8-27b", "reason": "unsuitable", "detail": "modality"}],
+            },
+            "attempts": [
+                {"model_id": "openai/gpt-oss-20b", "trigger": "initial", "error": "ConnectionResetError"},
+                {"model_id": "openai/gpt-oss-20b", "trigger": "transport_retry", "error": None},
+            ],
+            "elapsed_ms": 812,
+        }, False)
+        self.assertEqual(view["model_name"], "GPT-OSS 20B")
+        self.assertEqual(view["model_index"], 0)
+        self.assertEqual([row["error"] for row in view["attempts"]], ["call_failed", None])
+        self.assertTrue(view["candidates"][0]["selected"])
+        self.assertEqual(view["rejected"][0]["name"], "Qwen 3.8 27B")
+
+
 if __name__ == "__main__":
     unittest.main()

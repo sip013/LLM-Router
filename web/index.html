@@ -1,0 +1,110 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="csrf-token" content="{{CSRF}}">
+  <meta name="theme-color" content="#09090b">
+  <title>Router</title>
+  <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+  <link rel="preload" href="/fonts/inter.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="preload" href="/fonts/newsreader.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body data-mode="hero" data-dock="hero">
+  <div class="backdrop" aria-hidden="true"></div>
+
+  <header class="bar" id="bar">
+    <a class="brand" href="/" aria-label="Router home">
+      <span class="brand-slot" id="brand-slot"></span>
+      <span class="brand-name">Router</span>
+    </a>
+    <button type="button" id="reset" class="ghost" hidden>
+      <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M10 4.5v11M4.5 10h11"/></svg>
+      <span>New thread</span>
+    </button>
+  </header>
+
+  <div class="orb" id="orb" aria-hidden="true">
+    <canvas id="stage"></canvas>
+  </div>
+
+  <main class="main">
+    <section class="hero" id="hero" aria-labelledby="hero-title">
+      <div class="hero-slot" id="hero-slot"></div>
+      <h1 id="hero-title">Every question,<br><span>the right model.</span></h1>
+      <p class="lede">Router reads what you ask, picks the model best suited to it, and shows you why.</p>
+      <div class="composer-slot" id="composer-slot"></div>
+      <ul class="suggestions" aria-label="Try an example">
+        <li><button type="button" class="suggestion" data-prompt="Explain the difference between a process and a thread, briefly.">
+          <span class="suggestion-kind">Chat</span>Process vs. thread</button></li>
+        <li><button type="button" class="suggestion" data-prompt="Write a Python function that merges overlapping intervals, with tests.">
+          <span class="suggestion-kind">Code</span>Merge intervals</button></li>
+        <li><button type="button" class="suggestion" data-prompt="Plan a focused two-week study schedule for learning SQL from scratch.">
+          <span class="suggestion-kind">Plan</span>Learn SQL in two weeks</button></li>
+      </ul>
+    </section>
+
+    <div id="thread" class="thread" role="log" aria-live="polite" aria-label="Conversation"></div>
+  </main>
+
+  <button type="button" id="to-bottom" class="to-bottom" aria-label="Scroll to latest" hidden>
+    <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M10 4v12M5 11l5 5 5-5"/></svg>
+  </button>
+
+  <div class="composer-fade" aria-hidden="true"></div>
+  <form id="composer" class="composer" novalidate>
+    <div id="attachment" class="attachment" hidden>
+      <img id="attachment-thumb" alt="">
+      <span id="attachment-name" class="attachment-name"></span>
+      <button type="button" id="attachment-remove" class="attachment-remove" aria-label="Remove image">
+        <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M6 6l8 8M14 6l-8 8"/></svg>
+      </button>
+    </div>
+    <div class="composer-row">
+      <label class="tool" id="attach" title="Attach an image">
+        <span class="sr">Attach an image</span>
+        <input id="file" type="file" accept="image/png,image/jpeg,image/gif,image/webp">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M16.5 6.5v9a4.5 4.5 0 0 1-9 0V7a3 3 0 0 1 6 0v8a1.5 1.5 0 0 1-3 0V8"/></svg>
+      </label>
+      <label class="field">
+        <span class="sr">Message</span>
+        <textarea id="message" rows="1" placeholder="Ask anything" autocomplete="off"></textarea>
+      </label>
+      <button type="submit" class="send" id="send" aria-label="Send" disabled>
+        <svg class="send-arrow" viewBox="0 0 20 20" aria-hidden="true"><path d="M10 15.5V4.5M5 9.5l5-5 5 5"/></svg>
+        <span class="send-spin" aria-hidden="true"></span>
+      </button>
+    </div>
+    <div class="composer-foot">
+      <div class="chips">
+        <button type="button" id="verify" class="chip" aria-pressed="false">
+          <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M4.5 10.5l3.5 3.5 7.5-8"/></svg>
+          Double-check answer
+        </button>
+        <button type="button" id="reuse" class="chip" aria-pressed="false" hidden>
+          <svg viewBox="0 0 20 20" aria-hidden="true"><rect x="3.5" y="4.5" width="13" height="11" rx="2"/><path d="M3.5 13l4-4 3 3 2-2 4 4"/></svg>
+          Reuse last image
+        </button>
+      </div>
+      <p class="hint" id="hint"><kbd>Enter</kbd> to send <span aria-hidden="true">·</span> <kbd>Shift</kbd> <kbd>Enter</kbd> for a new line</p>
+    </div>
+  </form>
+
+  <div class="scrim" id="scrim" hidden></div>
+  <aside class="panel" id="panel" role="dialog" aria-modal="true" aria-labelledby="panel-title" hidden>
+    <header class="panel-head">
+      <h2 id="panel-title">Why this model</h2>
+      <button type="button" class="icon-ghost" id="panel-close" aria-label="Close">
+        <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M6 6l8 8M14 6l-8 8"/></svg>
+      </button>
+    </header>
+    <div class="panel-body" id="panel-body"></div>
+  </aside>
+
+  <div class="toasts" id="toasts" role="status" aria-live="polite"></div>
+
+  <script type="module" src="/scene.js"></script>
+  <script src="/app.js"></script>
+</body>
+</html>

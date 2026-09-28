@@ -173,4 +173,6 @@ def run_turn(
         "validation": validation,
         "verification": verification,
         "request_id": request_id,
+        "attempts": attempts,
+        "elapsed_ms": round((time.monotonic() - started) * 1000),
     }

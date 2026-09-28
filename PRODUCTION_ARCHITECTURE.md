@@ -379,3 +379,17 @@ Four reviews tightened the spec where an implementer would otherwise have invent
 **Quality numbers do not move between deploys.** Circuit state is the only live ranking input. Success labels are rubric pass or fail with `rubric_version`, `grader_id`, and the propensity of the served model. Transport failures are not quality labels. The promotion suite is a frozen set of request ids that the candidate version was not trained on. Offline promotion requires zero new constraint violations, a pre-registered cost-per-success improvement whose interval excludes zero, the same result on each required slice, and p95 latency inside a pre-registered factor of the champion. Shadow mode rescores and does not call a provider. Canary serves a hash-assigned fraction, keeps those rows out of the champion quality table, and stops if a pre-registered harm limit is crossed. Learned artifacts are stored as `semantic_model_version`, `retrieval_version`, and `quality_model_version`. None of them writes the pin.
 
 **Trace reads are tenant-scoped.** Operator access to retained prompt text is a break-glass role that writes its own audit record. Local spill is encrypted, keyed by tenant, and deleted after the durable write. Spill is not a residency location.
+
+## 21. Web client
+
+`app.py` serves the router on port 8765, on this machine and on other devices on the same local network. The browser is a view of the decision. It cannot change the model choice, limits, residency, or keys.
+
+**Two states.** Before the first question the page is a single centered stack: the 3D mark, the headline, the composer, and three example prompts. Sending moves the composer to the bottom, docks the mark into the header, and shows the thread in a 720px reading column. New thread reverses that, and keeps the old thread for five seconds behind an Undo toast before the server session is cleared.
+
+**The 3D mark shows routing.** `web/scene.js` renders one glass object per catalog model (sphere, faceted gem, torus) around a light point. While a request is out, pulses travel from the point to each model. When the reply arrives the point moves to the served model, that model lights in its color, and the group turns it to the front. The canvas never covers text. It pauses when the tab is hidden and renders a single still frame under `prefers-reduced-motion`.
+
+**Why this model.** Each reply carries a chip with the served model, the task, and Jev's confidence. The chip opens a panel built from typed fields the server returns: eligible count and rejection reasons, how the analysis was decided (`analysis_source`), candidate quality and expected speed from the catalog, retries and fallbacks from `attempts`, output checks, and elapsed time. Attempt errors outside the public error list are shown as `call_failed`, so exception names never reach the browser.
+
+**Failures are recoverable in place.** Every public error code maps to a message and one action: try again (the same payload is resent), edit the message, or reload for an expired session.
+
+**Security boundary is unchanged.** Markdown is escaped and rendered on the server, including code-block language labels. The page loads only same-origin files (Three.js and the fonts are vendored in `web/`), so the CSP stays `default-src 'self'`. Session and CSRF cookies are `HttpOnly` and `SameSite=Strict`, every POST carries `X-CSRF-Token`, the Host header must be localhost, this computer's name, or a private network address, and image bytes are sniffed against the declared type.
