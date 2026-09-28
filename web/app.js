@@ -389,6 +389,13 @@ function addAssistant(view, reveal = false) {
     reading.classList.add("reveal");
   }
 
+  article.append(why, reading, buildActions(reading));
+  thread.append(article);
+  markLatest(article);
+  return article;
+}
+
+function buildActions(reading) {
   const actions = el("div", "msg-actions");
   const copy = actionButton("copy", "Copy reply");
   copy.addEventListener("click", () => copyText(reading.innerText, copy));
@@ -414,10 +421,7 @@ function addAssistant(view, reveal = false) {
     });
   }
   actions.append(copy, up, down, note);
-  article.append(why, reading, actions);
-  thread.append(article);
-  markLatest(article);
-  return article;
+  return actions;
 }
 
 function addError(error, payload, userArticle) {
@@ -490,26 +494,139 @@ async function api(path, payload) {
   return data;
 }
 
+function nearBottom() {
+  return document.documentElement.scrollHeight - window.scrollY - window.innerHeight < 180;
+}
+
+function followStream() {
+  if (nearBottom()) scrollToEnd(false);
+}
+
+function openLive() {
+  const article = el("article", "msg msg-ai");
+  const why = el("button", "why");
+  why.type = "button";
+  const reading = el("div", "reading live");
+  article.append(why, reading);
+  thread.append(article);
+  return { article, why, reading, view: null };
+}
+
+function paintLiveModel(live, preview) {
+  const name = unbreakable(preview.model_name || preview.model_id);
+  const pct = percent(preview.confidence);
+  const meta = pct == null ? taskLabel(preview.task) : `${taskLabel(preview.task)} · ${pct}%`;
+  live.article.style.setProperty("--model", modelColor(preview.model_index));
+  const chevron = icon("chevron");
+  chevron.classList.add("why-chevron");
+  live.why.replaceChildren(el("span", "dot"), el("span", "why-name", name), el("span", "why-meta", meta), chevron);
+  live.why.setAttribute("aria-label", `Why ${name} was chosen`);
+}
+
+function finishLive(live, view) {
+  normalize(view);
+  paintLiveModel(live, view);
+  live.reading.classList.remove("live");
+  live.reading.innerHTML = view.html;
+  enhanceCode(live.reading);
+  if (!live.why.dataset.bound) {
+    live.why.dataset.bound = "1";
+    live.why.addEventListener("click", () => openPanel(live.view, live.why));
+  }
+  live.view = view;
+  live.article.append(buildActions(live.reading));
+  markLatest(live.article);
+}
+
+async function readSse(response, onEvent) {
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    buffer += decoder.decode(value, { stream: true });
+    let cut = buffer.indexOf("\n\n");
+    while (cut !== -1) {
+      const block = buffer.slice(0, cut);
+      buffer = buffer.slice(cut + 2);
+      let name = "message";
+      const data = [];
+      for (const line of block.split("\n")) {
+        if (line.startsWith("event:")) name = line.slice(6).trim();
+        else if (line.startsWith("data:")) data.push(line.slice(5).replace(/^ /, ""));
+      }
+      if (data.length) onEvent(name, JSON.parse(data.join("\n")));
+      if ((name === "model" || name === "delta") && buffer.indexOf("\n\n") === -1) {
+        await new Promise((resolve) => requestAnimationFrame(resolve));
+      }
+      cut = buffer.indexOf("\n\n");
+    }
+  }
+}
+
 async function send(payload, userArticle) {
   setBusy(true);
   emit("routing");
   const pending = addPending();
+  let live = null;
   scrollToEnd();
   try {
-    const view = await api("/turn", payload);
-    pending.stop();
-    pending.remove();
-    const article = addAssistant(view, true);
-    if (view.image_attached) {
+    let response;
+    try {
+      response = await fetch("/turn", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "X-CSRF-Token": csrf, "Accept": "text/event-stream" },
+        body: JSON.stringify(payload),
+      });
+    } catch {
+      throw { error: "network" };
+    }
+    const type = response.headers.get("content-type") || "";
+    if (!response.ok || !type.includes("text/event-stream")) {
+      let data;
+      try { data = await response.json(); } catch { data = { error: "model_call_failed" }; }
+      throw data.error ? data : { error: "model_call_failed" };
+    }
+    let failed = null;
+    let finished = null;
+    await readSse(response, (name, data) => {
+      if (name === "model") {
+        pending.stop();
+        pending.remove();
+        live = live || openLive();
+        paintLiveModel(live, data);
+        document.title = "Writing… · Router";
+        emit("writing");
+        followStream();
+      } else if (name === "delta" && live) {
+        live.reading.append(document.createTextNode(data.text || ""));
+        followStream();
+      } else if (name === "reset" && live) {
+        live.reading.replaceChildren();
+      } else if (name === "done") {
+        pending.stop();
+        pending.remove();
+        if (live) finishLive(live, data);
+        else live = { article: addAssistant(data, true) };
+        finished = data;
+      } else if (name === "error") {
+        failed = data;
+      }
+    });
+    if (failed) throw failed;
+    if (!finished) throw { error: "model_call_failed" };
+    if (finished.image_attached) {
       hasLastImage = true;
       reuse.hidden = false;
       layout(true);
     }
-    emit("done", view.model_index);
-    article.scrollIntoView({ block: "start", behavior: reduced ? "auto" : "smooth" });
+    emit("done", finished.model_index);
+    followStream();
   } catch (error) {
     pending.stop();
     pending.remove();
+    if (live) live.article.remove();
     addError(error, payload, userArticle);
     emit("error");
     scrollToEnd();

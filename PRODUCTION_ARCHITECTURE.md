@@ -388,6 +388,8 @@ Four reviews tightened the spec where an implementer would otherwise have invent
 
 **The 3D mark shows routing.** `web/scene.js` renders one glass object per catalog model (sphere, faceted gem, torus) around a light point. While a request is out, pulses travel from the point to each model. When the reply arrives the point moves to the served model, that model lights in its color, and the group turns it to the front. The canvas never covers text. It pauses when the tab is hidden and renders a single still frame under `prefers-reduced-motion`.
 
+**Streaming.** After a model is chosen, tokens are written to the browser as server-sent events. The page shows them as plain text. The final event replaces that text with the escaped markdown, so a partial reply is never treated as HTML. A dropped connection stops the stream and does not keep the unfinished reply.
+
 **Why this model.** Each reply carries a chip with the served model, the task, and Jev's confidence. The chip opens a panel built from typed fields the server returns: eligible count and rejection reasons, how the analysis was decided (`analysis_source`), candidate quality and expected speed from the catalog, retries and fallbacks from `attempts`, output checks, and elapsed time. Attempt errors outside the public error list are shown as `call_failed`, so exception names never reach the browser.
 
 **Failures are recoverable in place.** Every public error code maps to a message and one action: try again (the same payload is resent), edit the message, or reload for an expired session.

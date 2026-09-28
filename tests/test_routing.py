@@ -1,3 +1,4 @@
+import json
 import unittest
 from unittest.mock import patch
 
@@ -129,6 +130,40 @@ class QualityAndTraceTests(unittest.TestCase):
         self.assertEqual(result["validation"], "invalid_json")
         self.assertEqual(calls, ["openai/gpt-oss-20b"])
 
+    def test_stream_clears_a_partial_reply_before_retry(self):
+        from llm_router.execute import run_turn
+        deltas = []
+        resets = []
+        calls = {"n": 0}
+
+        def fake_stream(model_id, messages, timeout_s, max_tokens, on_delta):
+            on_delta("partial")
+            calls["n"] += 1
+            if calls["n"] == 1:
+                raise RuntimeError("dropped")
+            return {"text": "whole", "input_tokens": 2, "output_tokens": 4}
+
+        with patch("llm_router.execute.complete_streaming", fake_stream), patch(
+            "llm_router.execute.complete", side_effect=AssertionError("use the stream")
+        ), patch("llm_router.pipeline.ask", side_effect=JevUnavailable("down")), patch(
+            "llm_router.execute.load_policy", return_value={
+                "quality_table": None, "candidate_quality_table": None, "shadow": False, "canary_fraction": 0,
+            }
+        ):
+            result = run_turn(
+                [{"role": "user", "text": "Hi"}],
+                "",
+                None,
+                lambda history, model_id, image_path: ["hi"],
+                trace_path=None,
+                on_delta=deltas.append,
+                on_reset=lambda: resets.append(1),
+            )
+        self.assertEqual(deltas, ["partial", "partial"])
+        self.assertEqual(resets, [1])
+        self.assertEqual(result["text"], "whole")
+        self.assertEqual(result["model_id"], "openai/gpt-oss-20b")
+
     def test_rate_limit_skips_the_other_groq_model(self):
         from llm_router.execute import run_turn
 
@@ -157,6 +192,13 @@ class WebSafetyTests(unittest.TestCase):
         from llm_router.web import sniff_image
         self.assertEqual(sniff_image(b"\x89PNG\r\n\x1a\nrest")[0], "image/png")
         self.assertIsNone(sniff_image(b"not an image"))
+
+    def test_sse_keeps_newlines_inside_the_data_line(self):
+        from llm_router.web import format_sse
+        encoded = format_sse("delta", {"text": "a<b>\nline"}).decode("utf-8")
+        self.assertTrue(encoded.startswith("event: delta\n"))
+        self.assertEqual(encoded.count("data: "), 1)
+        self.assertEqual(json.loads(encoded.split("data: ", 1)[1].strip())["text"], "a<b>\nline")
 
     def test_only_localhost_is_allowed(self):
         from llm_router.web import host_allowed

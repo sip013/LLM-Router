@@ -2,7 +2,7 @@ import hashlib
 import time
 import uuid
 
-from llm_router.gateway import GatewayError, complete, is_rate_limited, time_left_ms
+from llm_router.gateway import GatewayError, StreamClosed, complete, complete_streaming, is_rate_limited, time_left_ms
 from llm_router.pipeline import route_request
 from llm_router.policy import rank_models
 from llm_router.quality import load_policy, load_rates
@@ -32,6 +32,9 @@ def run_turn(
     response_schema: dict | None = None,
     limits=DEFAULT_LIMITS,
     trace_path=None,
+    on_start=None,
+    on_delta=None,
+    on_reset=None,
 ) -> dict:
     user_text = history[-1]["text"]
     context_tokens = max(1, sum(len(turn["text"]) for turn in history) // 4)
@@ -98,14 +101,38 @@ def run_turn(
         if remaining_ms < 1000:
             attempts.append({"model_id": candidate_id, "trigger": trigger, "error": "latency_budget_exceeded"})
             break
+        shown = False
+
+        def publish(piece: str) -> None:
+            nonlocal shown
+            shown = True
+            on_delta(piece)
+
+        def abandon() -> None:
+            nonlocal shown
+            if shown and on_reset is not None:
+                on_reset()
+            shown = False
+
         for retry in range(2):
             try:
-                result = complete(
-                    candidate_id,
-                    messages_for(history, candidate_id, image_path),
-                    timeout_s=remaining_ms / 1000,
-                    max_tokens=model.max_output_tokens,
-                )
+                if on_start is not None:
+                    on_start(candidate_id, decision)
+                if on_delta is None:
+                    result = complete(
+                        candidate_id,
+                        messages_for(history, candidate_id, image_path),
+                        timeout_s=remaining_ms / 1000,
+                        max_tokens=model.max_output_tokens,
+                    )
+                else:
+                    result = complete_streaming(
+                        candidate_id,
+                        messages_for(history, candidate_id, image_path),
+                        remaining_ms / 1000,
+                        model.max_output_tokens,
+                        publish,
+                    )
                 text = result["text"]
                 model_id = candidate_id
                 ok, validation = matches_schema(text, response_schema)
@@ -117,11 +144,15 @@ def run_turn(
                     "output_tokens": result.get("output_tokens"),
                 })
                 break
+            except StreamClosed:
+                raise
             except GatewayError as exc:
+                abandon()
                 attempts.append({"model_id": candidate_id, "trigger": trigger, "error": exc.code})
                 text = None
                 break
             except Exception as exc:
+                abandon()
                 if is_rate_limited(exc):
                     blocked_providers.add(model.provider)
                     attempts.append({"model_id": candidate_id, "trigger": trigger, "error": "rate_limited"})

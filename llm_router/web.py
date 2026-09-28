@@ -9,6 +9,7 @@ from pathlib import Path
 from urllib.parse import urlparse
 
 from llm_router.execute import run_turn
+from llm_router.gateway import StreamClosed
 from llm_router.messages import conversation_messages
 from llm_router.pipeline import NoEligibleModel
 from llm_router.registry import BY_ID, CATALOG
@@ -37,6 +38,12 @@ SIGNATURES = (
 
 _lock = threading.Lock()
 _sessions: dict[str, dict] = {}
+
+
+def format_sse(event: str, payload: dict) -> bytes:
+    body = json.dumps(payload, ensure_ascii=False)
+    data = "".join(f"data: {line}\n" for line in body.split("\n"))
+    return f"event: {event}\n{data}\n".encode("utf-8")
 
 
 def sniff_image(data: bytes) -> tuple[str, str] | None:
@@ -186,6 +193,23 @@ class Handler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(body)
 
+    def _open_stream(self) -> None:
+        self.send_response(200)
+        self.send_header("Content-Type", "text/event-stream; charset=utf-8")
+        self.send_header("Cache-Control", "no-cache, no-store")
+        self.send_header("Content-Security-Policy", "default-src 'self'; img-src 'self' blob: data:")
+        self.send_header("X-Content-Type-Options", "nosniff")
+        self.send_header("Referrer-Policy", "no-referrer")
+        self.send_header("X-Accel-Buffering", "no")
+        self.end_headers()
+
+    def _write_event(self, event: str, payload: dict) -> None:
+        try:
+            self.wfile.write(format_sse(event, payload))
+            self.wfile.flush()
+        except OSError as exc:
+            raise StreamClosed from exc
+
     def _json(self, status: int, payload: dict, extra: list[str] | None = None):
         self._send(status, json.dumps(payload).encode("utf-8"), "application/json; charset=utf-8", extra)
 
@@ -314,6 +338,39 @@ class Handler(BaseHTTPRequestHandler):
             image_path = saved
             image_attached = True
         state["history"].append({"role": "user", "text": message.strip()})
+        opened = False
+
+        def emit(event: str, payload: dict) -> None:
+            nonlocal opened
+            if not opened:
+                self._open_stream()
+                opened = True
+            self._write_event(event, payload)
+
+        def on_start(model_id: str, decision: dict) -> None:
+            fields = _model_fields(model_id)
+            jev = decision.get("jev") or {}
+            confidence = jev.get("route_confidence")
+            if confidence is None:
+                confidence = jev.get("task_confidence")
+            emit("model", {
+                "model_id": fields["model_id"],
+                "model_name": fields["name"],
+                "model_index": fields["index"],
+                "task": decision.get("task_type"),
+                "confidence": confidence,
+            })
+
+        def fail(status: int, payload: dict) -> None:
+            state["history"].pop()
+            if not opened:
+                self._json(status, payload)
+                return
+            try:
+                emit("error", payload)
+            except StreamClosed:
+                return
+
         try:
             result = run_turn(
                 state["history"],
@@ -322,15 +379,19 @@ class Handler(BaseHTTPRequestHandler):
                 conversation_messages,
                 require_verification=verify,
                 trace_path=TRACE_PATH,
+                on_start=on_start,
+                on_delta=lambda piece: emit("delta", {"text": piece}),
+                on_reset=lambda: emit("reset", {}),
             )
-        except NoEligibleModel as exc:
+        except StreamClosed:
             state["history"].pop()
-            self._json(400, {"error": "no_eligible_model", "rejected": _rejected_view(exc.rejected)})
+            return
+        except NoEligibleModel as exc:
+            fail(400, {"error": "no_eligible_model", "rejected": _rejected_view(exc.rejected)})
             return
         except Exception as exc:
-            state["history"].pop()
             code = str(exc)
-            self._json(502, {"error": code if code in PUBLIC_ERRORS else "model_call_failed"})
+            fail(502, {"error": code if code in PUBLIC_ERRORS else "model_call_failed"})
             return
         view = _decision_view(result, image_attached)
         state["history"].append({"role": "assistant", "text": result["text"]})
@@ -339,7 +400,10 @@ class Handler(BaseHTTPRequestHandler):
             state["last_image"] = image_path
         state["turns"].append({"role": "user", "text": message.strip(), "image_attached": image_attached})
         state["turns"].append({"role": "assistant", **view})
-        self._json(200, view)
+        try:
+            emit("done", view)
+        except StreamClosed:
+            return
 
 
 def _save_image(encoded, declared) -> str:

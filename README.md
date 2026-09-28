@@ -28,7 +28,7 @@ Put these keys in `.env`. The file stays on your machine and is listed in `.giti
 ## What the page does
 
 - A start screen, then a conversation. New thread can be undone for a few seconds.
-- Your message stays in a bubble. The reply is set as reading text, with code blocks and tables.
+- Your message stays in a bubble. The reply appears as it is written, then becomes the formatted reading text (code blocks and tables) once the model finishes. Formatting still happens on the server.
 - A chip above each reply names the model, the task, and Jev's confidence. Open it for the decision: eligibility, analysis, ranking, retries, and how the candidates compared.
 - Attach a PNG, JPEG, GIF, or WebP image, or reuse the last one. Paste and drag-and-drop work. "Double-check answer" asks a different model to review the reply.
 - The mark in the header is the catalog. While a request is out, a light travels toward each model. When the reply arrives, it settles on the model that answered.
